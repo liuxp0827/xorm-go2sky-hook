@@ -45,6 +45,7 @@ func (h *Go2SkyHook) BeforeProcess(c *contexts.ContextHook) (context.Context, er
 		return nil, err
 	}
 	span.SetComponent(ComponentIDMysql)
+	span.Tag("args", fmt.Sprintf("%v", c.Args))
 	span.Tag("sql", fmt.Sprintf("%v %v", c.SQL, c.Args))
 	span.SetSpanLayer(v3.SpanLayer_Database)
 
@@ -64,15 +65,10 @@ func (h *Go2SkyHook) AfterProcess(c *contexts.ContextHook) error {
 	if c.ExecuteTime > 0 {
 		span.Tag("execute_time_ms", c.ExecuteTime.String())
 	}
-	setSpanStatus(span, c.Err)
+	if c.Err != nil {
+		timeNow := time.Now()
+		span.Error(timeNow, c.Err.Error())
+	}
 	span.End()
 	return nil
-}
-
-func setSpanStatus(span go2sky.Span, err error) {
-	if err == nil {
-		return
-	}
-	timenow := time.Now()
-	span.Error(timenow, err.Error())
 }
