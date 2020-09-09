@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/SkyAPM/go2sky"
-	"github.com/SkyAPM/go2sky/propagation"
 	v3 "github.com/SkyAPM/go2sky/reporter/grpc/language-agent"
 	"xorm.io/xorm"
 	"xorm.io/xorm/contexts"
@@ -39,7 +38,7 @@ func (h *Go2SkyHook) BeforeProcess(c *contexts.ContextHook) (context.Context, er
 	span, ctx, err := h.tracer.CreateEntrySpan(c.Ctx, fmt.Sprintf("%v %v", c.SQL, c.Args), func() (string, error) {
 		// 从context 按照skywalking的http头部协议捞取上一层的调用链信息, 当前使用v3版本的协议
 		// https://github.com/apache/skywalking/blob/master/docs/en/protocols/Skywalking-Cross-Process-Propagation-Headers-Protocol-v3.md
-		return c.Ctx.Value(propagation.Header).(string), nil
+		return "", nil
 	})
 	if err != nil {
 		return nil, err
@@ -48,20 +47,12 @@ func (h *Go2SkyHook) BeforeProcess(c *contexts.ContextHook) (context.Context, er
 	span.Tag("args", fmt.Sprintf("%v", c.Args))
 	span.Tag("sql", fmt.Sprintf("%v %v", c.SQL, c.Args))
 	span.SetSpanLayer(v3.SpanLayer_Database)
-
+	ctx = context.WithValue(ctx, fmt.Sprintf("%v %v", c.SQL, c.Args), span)
 	return ctx, nil
 }
 
 func (h *Go2SkyHook) AfterProcess(c *contexts.ContextHook) error {
-	span, err := h.tracer.CreateExitSpan(c.Ctx, fmt.Sprintf("%v %v", c.SQL, c.Args), "xorm", func(header string) error {
-		// 按照skywalking的http头部协议, 通过context往下传递, 当前使用v3版本的协议
-		// https://github.com/apache/skywalking/blob/master/docs/en/protocols/Skywalking-Cross-Process-Propagation-Headers-Protocol-v3.md
-		c.Ctx = context.WithValue(c.Ctx, propagation.Header, header)
-		return nil
-	})
-	if err != nil {
-		return err
-	}
+	span := c.Ctx.Value(fmt.Sprintf("%v %v", c.SQL, c.Args)).(go2sky.Span)
 	if c.ExecuteTime > 0 {
 		span.Tag("execute_time_ms", c.ExecuteTime.String())
 	}
