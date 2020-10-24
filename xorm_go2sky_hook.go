@@ -35,10 +35,14 @@ func WrapEngineGroup(eg *xorm.EngineGroup, tracer *go2sky.Tracer) {
 }
 
 func (h *Go2SkyHook) BeforeProcess(c *contexts.ContextHook) (context.Context, error) {
-	span, ctx, err := h.tracer.CreateEntrySpan(c.Ctx, fmt.Sprintf("%v %v", c.SQL, c.Args), func() (string, error) {
-		// 从context 按照skywalking的http头部协议捞取上一层的调用链信息, 当前使用v3版本的协议
+	var peer string = "peer"
+	if p, ok := c.Ctx.Value("peer").(string); ok {
+		peer = p
+	}
+	span, err := h.tracer.CreateExitSpan(c.Ctx, fmt.Sprintf("%v %v", c.SQL, c.Args), peer, func(header string) error {
+		// 将本层的调用链信息写入http头部, 传入到下一层调用, 当前使用v3版本的协议
 		// https://github.com/apache/skywalking/blob/master/docs/en/protocols/Skywalking-Cross-Process-Propagation-Headers-Protocol-v3.md
-		return "", nil
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -47,7 +51,7 @@ func (h *Go2SkyHook) BeforeProcess(c *contexts.ContextHook) (context.Context, er
 	span.Tag("args", fmt.Sprintf("%v", c.Args))
 	span.Tag("sql", fmt.Sprintf("%v %v", c.SQL, c.Args))
 	span.SetSpanLayer(v3.SpanLayer_Database)
-	ctx = context.WithValue(ctx, fmt.Sprintf("%v %v", c.SQL, c.Args), span)
+	ctx := context.WithValue(c.Ctx, fmt.Sprintf("%v %v", c.SQL, c.Args), span)
 	return ctx, nil
 }
 
